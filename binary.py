@@ -39,7 +39,10 @@ def readbin(filename, chanlist=None):
 
     # Check the channel list given
     if chanlist is None or len(chanlist) == 0:
-        chanlist = hdr['channels']
+        # Bypass slow loop below if reading entire file
+        with open(filename, 'rb') as fid:
+            fid.seek(hdr['hdrsize'])
+            return _np.fromfile(fid, dtype=uint).reshape((-1, hdr['nchannels']))
     else:
         chanlist = _np.array(chanlist)
 

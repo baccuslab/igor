@@ -1,0 +1,4 @@
+*.swp
+*.bin
+*.mat
+__pycache__/*
