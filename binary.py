@@ -42,7 +42,9 @@ def readbin(filename, chanlist=None):
         # Bypass slow loop below if reading entire file
         with open(filename, 'rb') as fid:
             fid.seek(hdr['hdrsize'])
-            return _np.fromfile(fid, dtype=uint).reshape((-1, hdr['nchannels']))
+            data = _np.fromfile(fid, dtype=uint).reshape(
+                    (-1, hdr['nchannels'])) * hdr['gain'] + hdr['offset']
+            return data
     else:
         chanlist = _np.array(chanlist)
 
