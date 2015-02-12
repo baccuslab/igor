@@ -46,8 +46,6 @@ def readbin(filename, chanlist=None):
             superblock_size = int(hdr['blksize'] * hdr['nchannels'])
             nsuperblocks = int(hdr['nsamples'] / hdr['blksize'])
             for block in range(nsuperblocks):
-                #tmp = _np.fromfile(fid, dtype=uint, count=superblock_size)
-                #tmp = tmp.reshape((hdr['nchannels'], hdr['blksize'])).T
                 data[block * hdr['blksize'] : (block + 1) * hdr['blksize'], :] = \
                         _np.fromfile(fid, dtype=uint, count=superblock_size).reshape(
                         (hdr['nchannels'], hdr['blksize'])).T
