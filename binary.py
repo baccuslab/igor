@@ -49,6 +49,8 @@ def readbin(filename, chanlist=None):
                 data[block * hdr['blksize'] : (block + 1) * hdr['blksize'], :] = \
                         _np.fromfile(fid, dtype=uint, count=superblock_size).reshape(
                         (-1, hdr['blksize'])).T
+            data *= hdr['gain']
+            data += hdr['offset']
             return data
     else:
         chanlist = _np.array(chanlist)
