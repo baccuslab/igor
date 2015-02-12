@@ -39,11 +39,16 @@ def readbin(filename, chanlist=None):
 
     # Check the channel list given
     if chanlist is None or len(chanlist) == 0:
-        # Bypass slow loop below if reading entire file
+        # Bypass slower loop below if reading entire file
         with open(filename, 'rb') as fid:
             fid.seek(hdr['hdrsize'])
-            data = _np.fromfile(fid, dtype=uint).reshape(
-                    (-1, hdr['nchannels'])) * hdr['gain'] + hdr['offset']
+            data = _np.empty((hdr['nsamples'], hdr['nchannels']))
+            superblock_size = hdr['blksize'] * hdr['nchannels']
+            nsuperblocks = int(hdr['nsamples'] / superblock_size) * uint.itemsize
+            for block in range(nsuperblocks):
+                data[block * hdr['blksize'] : (block + 1) * hdr['blksize'], :] = \
+                        _np.fromfile(fid, dtype=uint, count=superblock_size).reshape(
+                        (-1, hdr['blksize'])).T
             return data
     else:
         chanlist = _np.array(chanlist)
