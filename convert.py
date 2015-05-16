@@ -24,45 +24,63 @@ def interleaved_to_chunk(header, fifofile, outputfile):
     hdr = readheader(header)
 
     # number of blocks
-    nblocks = int(np.ceil(hdr['nscans'] / hdr['samples_per_channel']))
+    #nblocks = int(np.ceil(hdr['nscans'] / hdr['samples_per_channel']))
 
     # number of blocks per file
+    nblocks_per_file = int(np.ceil( (hdr['scanrate'] * 1000) / hdr['samples_per_channel'] ))
+    end_of_file = False
+    letters = list("abcdefghijklmnopqrstuvwxyz")
+    #1/0
 
     # total number of bytes in one block taking all channels into account
     block_size = hdr['samples_per_channel'] * hdr['nchan'] * BYTES_PER_SAMPLE
+
+    samples_per_channel = hdr['samples_per_channel']
 
     # read blocks from FIFO and skip header
     with open(fifofile, 'rb') as fifo:
 
         # jump past the header
-        fifo.seek(FIFO_HEADER_FIX_BYTES + header.numberOfChannels * FIFO_HEADER_BYTES_PER_CHANNEL)
+        fifo.seek(FIFO_HEADER_FIX_BYTES + hdr['nchan'] * FIFO_HEADER_BYTES_PER_CHANNEL)
 
-        # copy header to file_out
-        copyfile(header, outputfile)
+        # for each file
+        fidx = 0
+        while not end_of_file:
 
-        # open output file, header is already written, so use 'append' mode
-        with open(outputfile, 'ab') as output:
+            # create a new output file
+            of = outputfile + letters[fidx]
+            print('Created file: ' + of)
+            fidx += 1
 
-            for i in range(nblocks):
+            # copy header to file_out
+            copyfile(header, of)
 
-                # load data for this block
-                data_one_block = fifo.read(block_size)
+            # open output file, header is already written, so use 'append' mode
+            with open(of, 'ab') as output:
 
-                # make sure 'data_one_block' has the right number of points before reshaping it
-                if (len(data_one_block) != block_size):
+                for i in range(nblocks_per_file):
 
-                    # last read from file, not enough sample to fill a
-                    # blockSize, write as much data as possible such that all
-                    # channels get the same amount of data
-                    samples_per_channel = len(data_one_block) // hdr['nchan'] // BYTES_PER_SAMPLE
-                    last_block_size = samples_per_channel * hdr['nchan'] * BYTES_PER_SAMPLE
-                    data_one_block = data_one_block[:last_block_size]
+                    # load data for this block
+                    data_one_block = fifo.read(block_size)
 
-                # write data_one_block to output file but after reshaping it
-                data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchan'], samples_per_channel, order='F')
+                    # make sure 'data_one_block' has the right number of points before reshaping it
+                    if (len(data_one_block) != block_size):
 
-                # write the data to the output file!
-                data_reshaped.tofile(output)
+                        # last read from file, not enough sample to fill a
+                        # blockSize, write as much data as possible such that all
+                        # channels get the same amount of data
+                        samples_per_channel = len(data_one_block) // hdr['nchan'] // BYTES_PER_SAMPLE
+                        last_block_size = samples_per_channel * hdr['nchan'] * BYTES_PER_SAMPLE
+                        data_one_block = data_one_block[:last_block_size]
+
+                        print('END OF FIFO FILE')
+                        end_of_file = True
+
+                    # write data_one_block to output file but after reshaping it
+                    data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchan'], samples_per_channel, order='F')
+
+                    # write the data to the output file!
+                    data_reshaped.tofile(output)
 
 
 def readheader(filename):
@@ -83,9 +101,9 @@ def readheader(filename):
 
         # number of scans
         nscans = parse('>I')
-        if nscans == 0:
-            print("Warning: the value of nscans is 0. Using a large value (1e12) instead.")
-            nscans = 1e12
+        #if nscans == 0:
+            #print("Warning: the value of nscans is 0. Using a large value (1e12) instead.")
+            #nscans = 1e12
         hdr['nscans'] = nscans
 
         # number of channels
@@ -104,10 +122,10 @@ def readheader(filename):
         hdr['scaleOff'] = parse('>f')
         hdr['dateSize'] = parse('>i')   # big endian, 32 bit signed integer
         hdr['dateStr'] = parse('a'+str(hdr['dateSize']))
-        hdr['timeSize'] = parse('>i', 1)
-        hdr['timeStr'] = parse('a'+str(hdr['timeSize']), 1)    # string
-        hdr['userSize'] = parse('>i', 1)
-        hdr['userStr'] = parse('a'+str(hdr['userSize']), 1)
+        hdr['timeSize'] = parse('>i')
+        hdr['timeStr'] = parse('a'+str(hdr['timeSize']))    # string
+        hdr['userSize'] = parse('>i')
+        hdr['userStr'] = parse('a'+str(hdr['userSize']))
 
     return hdr
 
