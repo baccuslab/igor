@@ -12,25 +12,22 @@ import numpy as np
 from shutil import copyfile
 
 
-def interleaved_to_chunk(header, fifofile, outputfile):
+def interleaved_to_chunk(header, fifofile, outputfilebase):
 
     # some constants
     FIFO_HEADER_FIX_BYTES = 304
     FIFO_HEADER_BYTES_PER_CHANNEL = 76
     BYTES_PER_SAMPLE = 2                # data is recorded as int16
-    fmt_string = 'int16'             # anything that is 2 bytes will work
+    SECONDS_PER_FILE = 1000             # how big each file should be
+    fmt_string = 'int16'                # anything that is 2 bytes will work
+    letters = list("abcdefghijklmnopqrstuvwxyz")
 
     # read existing Igor .bin header to extract some needed variables
     hdr = readheader(header)
 
-    # number of blocks
-    #nblocks = int(np.ceil(hdr['nscans'] / hdr['samples_per_channel']))
-
     # number of blocks per file
-    nblocks_per_file = int(np.ceil( (hdr['scanrate'] * 1000) / hdr['samples_per_channel'] ))
+    nblocks_per_file = int(np.ceil((hdr['scanrate'] * SECONDS_PER_FILE) / hdr['samples_per_channel']))
     end_of_file = False
-    letters = list("abcdefghijklmnopqrstuvwxyz")
-    #1/0
 
     # total number of bytes in one block taking all channels into account
     block_size = hdr['samples_per_channel'] * hdr['nchan'] * BYTES_PER_SAMPLE
@@ -40,7 +37,7 @@ def interleaved_to_chunk(header, fifofile, outputfile):
     # read blocks from FIFO and skip header
     with open(fifofile, 'rb') as fifo:
 
-        # jump past the header
+        # jump past the header of the FIFO file
         fifo.seek(FIFO_HEADER_FIX_BYTES + hdr['nchan'] * FIFO_HEADER_BYTES_PER_CHANNEL)
 
         # for each file
@@ -48,15 +45,15 @@ def interleaved_to_chunk(header, fifofile, outputfile):
         while not end_of_file:
 
             # create a new output file
-            of = outputfile + letters[fidx]
-            print('Created file: ' + of)
+            outputfile = outputfilebase + letters[fidx]
+            print('Created file: ' + outputfile)
             fidx += 1
 
             # copy header to file_out
-            copyfile(header, of)
+            copyfile(header, outputfile)
 
             # open output file, header is already written, so use 'append' mode
-            with open(of, 'ab') as output:
+            with open(outputfile, 'ab') as output:
 
                 for i in range(nblocks_per_file):
 
@@ -73,7 +70,7 @@ def interleaved_to_chunk(header, fifofile, outputfile):
                         last_block_size = samples_per_channel * hdr['nchan'] * BYTES_PER_SAMPLE
                         data_one_block = data_one_block[:last_block_size]
 
-                        print('END OF FIFO FILE')
+                        print('End of FIFO file!')
                         end_of_file = True
 
                     # write data_one_block to output file but after reshaping it
@@ -81,6 +78,10 @@ def interleaved_to_chunk(header, fifofile, outputfile):
 
                     # write the data to the output file!
                     data_reshaped.tofile(output)
+
+                    # end?
+                    if end_of_file:
+                        break
 
 
 def readheader(filename):
@@ -99,12 +100,8 @@ def readheader(filename):
         hdr['type'] = parse('>h')
         hdr['version'] = parse('>h')
 
-        # number of scans
-        nscans = parse('>I')
-        #if nscans == 0:
-            #print("Warning: the value of nscans is 0. Using a large value (1e12) instead.")
-            #nscans = 1e12
-        hdr['nscans'] = nscans
+        # number of scans (unused)
+        hdr['nscans'] = parse('>I')
 
         # number of channels
         hdr['nchan'] = parse('>I')
