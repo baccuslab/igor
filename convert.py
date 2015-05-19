@@ -31,9 +31,9 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
 
         # the correct nsamples value
         nsamples = hdr['fs'] * SECONDS_PER_FILE
-        print('Warning: overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
 
         # overwrite
+        print('Warning: overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
         overwrite_nsamples(headerfile, nsamples)
 
         # reload header
@@ -45,7 +45,6 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     # number of blocks per file
     nblocks_per_file = int(np.ceil(hdr['nsamples'] / hdr['blksize']))
     end_of_file = False
-    final_file_truncated = False
 
     # total number of bytes in one block taking all channels into account
     block_size = hdr['blksize'] * hdr['nchannels'] * BYTES_PER_SAMPLE
@@ -74,7 +73,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
             with open(outputfile, 'ab') as output:
 
                 # write data
-                for i in range(nblocks_per_file):
+                for block_idx in range(nblocks_per_file):
 
                     # load data for this block
                     data_one_block = fifo.read(block_size)
@@ -85,28 +84,27 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
                         # last read from file, not enough sample to fill a
                         # blockSize, write as much data as possible such that all
                         # channels get the same amount of data
-                        samples_per_channel = len(data_one_block) // hdr['nchannels'] // BYTES_PER_SAMPLE
-                        last_block_size = samples_per_channel * hdr['nchannels'] * BYTES_PER_SAMPLE
-                        data_one_block = data_one_block[:last_block_size]
+                        #samples_per_channel = len(data_one_block) // hdr['nchannels'] // BYTES_PER_SAMPLE
+                        #last_block_size = samples_per_channel * hdr['nchannels'] * BYTES_PER_SAMPLE
+                        #data_one_block = data_one_block[:last_block_size]
 
                         print('End of FIFO file!')
                         end_of_file = True
-                        final_file_truncated = True
-
-                    # reformat and reshape the data
-                    data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchannels'], samples_per_channel, order='F')
-
-                    # write the data to the output file!
-                    data_reshaped.tofile(output)
-
-                    # end?
-                    if end_of_file:
                         break
+                        #final_file_truncated = True
+
+                    else:
+                        # reformat and reshape the data
+                        data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchannels'], samples_per_channel, order='F')
+
+                        # write the data to the output file!
+                        data_reshaped.tofile(output)
 
             # if the last file is shorter than the rest, write the appropriate
             # nsamples value in the header
-            if final_file_truncated:
-                print(samples_per_channel*hdr['nchannels'])
+            if end_of_file:
+                nsamples = hdr['blksize'] * block_idx
+                print('Warning: overwriting the header nsamples value of 0 with %i (%i seconds in the last file)' % (nsamples, nsamples / hdr['fs']))
                 overwrite_nsamples(outputfile, samples_per_channel * hdr['nchannels'])
 
     print('Done!')
