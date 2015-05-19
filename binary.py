@@ -6,6 +6,7 @@ Tools for interacting with binary recording files
 import numpy as _np
 from os import path as _path
 
+
 # noinspection PyNoneFunctionAssignment
 def readbin(filename, chanlist=None):
     """
@@ -14,7 +15,7 @@ def readbin(filename, chanlist=None):
     Parameters
     ----------
     filename : string
-        Filename to read 
+        Filename to read
 
     chanlist : array_like
         List of channels to read. Raises IndexError if any channels are not in the file. If None (default), loads all
@@ -26,13 +27,13 @@ def readbin(filename, chanlist=None):
         Data from the channels requested. Shape is (nsamples, nchannels)
 
     """
-    
+
     # Type of binary data, 16-bit unsigned integers
     uint = _np.dtype('>i2')
 
     # Check file exists
     if not _path.exists(filename):
-        raise FileNotFoundError('Requested bin file {f} does not exist'.format(f=filename))
+        raise IOError('Requested bin file {f} does not exist'.format(f=filename))
 
     # Read the header
     hdr = readbinhdr(filename)
@@ -66,7 +67,7 @@ def readbin(filename, chanlist=None):
         # Compute number of blocks and size of each data chunk
         nblocks     = int(hdr['nsamples'] / hdr['blksize']) * uint.itemsize
         chunk_size  = hdr['nchannels'] * hdr['blksize'] * uint.itemsize
-        
+
         # Preallocate return array
         data = _np.empty((hdr['nsamples'], len(chanlist)))
 
@@ -110,7 +111,7 @@ def readbinhdr(filename):
         Header data
 
     """
-    
+
     # Define datatypes to be read in
     uint    = _np.dtype('>u4') 	# Unsigned integer, 32-bit
     short   = _np.dtype('>i2') 	# Signed 16-bit integer

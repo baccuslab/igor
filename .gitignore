@@ -2,3 +2,4 @@
 *.bin
 *.mat
 __pycache__/*
+*.egg-info/*
