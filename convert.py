@@ -24,7 +24,6 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     letters = list("abcdefghijklmnopqrstuvwxyz")
 
     # read existing Igor .bin header to extract some needed variables
-    #hdr = readheader(header, SECONDS_PER_FILE)
     hdr = readbinhdr(headerfile)
 
     # overwrite the header number of samples value if necessary
@@ -35,21 +34,18 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
         print('Warning: overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
 
         # overwrite
-        bytestr = np.array([nsamples], dtype='>I').tostring(order='F')
-        with open(headerfile, 'r+b') as hfile:
-            hfile.seek(8,0)
-            hfile.write(bytestr)
+        overwrite_nsamples(headerfile, nsamples)
 
         # reload header
         hdr = readbinhdr(headerfile)
         if hdr['nsamples'] != nsamples:
-            # if we reach this error, that means that we didn't properly
-            # overwrite the correct bits in the existing header file
+            # if we reach this error, that means that we didn't properly overwrite the correct bits in the existing header file
             raise IOError('Error in header bin file! I made some sort of mistake trying to overwrite the nsamples value in the header.')
 
     # number of blocks per file
     nblocks_per_file = int(np.ceil(hdr['nsamples'] / hdr['blksize']))
     end_of_file = False
+    final_file_truncated = False
 
     # total number of bytes in one block taking all channels into account
     block_size = hdr['blksize'] * hdr['nchannels'] * BYTES_PER_SAMPLE
@@ -95,6 +91,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
 
                         print('End of FIFO file!')
                         end_of_file = True
+                        final_file_truncated = True
 
                     # reformat and reshape the data
                     data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchannels'], samples_per_channel, order='F')
@@ -106,6 +103,37 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
                     if end_of_file:
                         break
 
+            # if the last file is shorter than the rest, write the appropriate
+            # nsamples value in the header
+            if final_file_truncated:
+                print(samples_per_channel*hdr['nchannels'])
+                overwrite_nsamples(outputfile, samples_per_channel * hdr['nchannels'])
+
+    print('Done!')
+
+
+def overwrite_nsamples(headerfile, value):
+    """
+    Overwrites the 'nsamples' (also known as 'nscans') field in a binary header
+
+    See binary.readbinhdr for more info
+
+    Parameters
+    ----------
+    headerfile : string
+        the name of the file
+
+    value : int
+        the correct value for nsamples to overwrite in the file
+    """
+
+    # convert to a byte string
+    bytestr = np.array([value], dtype='>I').tostring(order='F')
+
+    # write to the file
+    with open(headerfile, 'r+b') as hfile:
+        hfile.seek(8, 0)
+        hfile.write(bytestr)
 
 if __name__ == '__main__':
 
