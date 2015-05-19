@@ -7,7 +7,6 @@ import numpy as _np
 from os import path as _path
 
 
-# noinspection PyNoneFunctionAssignment
 def readbin(filename, chanlist=None):
     """
     Read a binary recording file
@@ -95,7 +94,6 @@ def readbin(filename, chanlist=None):
         return data
 
 
-# noinspection PyNoneFunctionAssignment
 def readbinhdr(filename):
     """
     Read the header from a binary recording file
@@ -109,6 +107,10 @@ def readbinhdr(filename):
     -------
     hdr : dict
         Header data
+
+    Notes
+    -----
+    Numpy data types: http://docs.scipy.org/doc/numpy/reference/arrays.dtypes.html
 
     """
 

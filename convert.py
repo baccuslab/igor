@@ -10,9 +10,10 @@ to chunked binary files (input for spike sorting system)
 import sys
 import numpy as np
 from shutil import copyfile
+from binary import readbinhdr
 
 
-def interleaved_to_chunk(header, fifofile, outputfilebase):
+def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
 
     # some constants
     FIFO_HEADER_FIX_BYTES = 304
@@ -23,38 +24,60 @@ def interleaved_to_chunk(header, fifofile, outputfilebase):
     letters = list("abcdefghijklmnopqrstuvwxyz")
 
     # read existing Igor .bin header to extract some needed variables
-    hdr = readheader(header)
+    #hdr = readheader(header, SECONDS_PER_FILE)
+    hdr = readbinhdr(headerfile)
+
+    # overwrite the header number of samples value if necessary
+    if hdr['nsamples'] == 0:
+
+        # the correct nsamples value
+        nsamples = hdr['fs'] * SECONDS_PER_FILE
+        print('Warning: overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
+
+        # overwrite
+        bytestr = np.array([nsamples], dtype='>I').tostring(order='F')
+        with open(headerfile, 'r+b') as hfile:
+            hfile.seek(8,0)
+            hfile.write(bytestr)
+
+        # reload header
+        hdr = readbinhdr(headerfile)
+        if hdr['nsamples'] != nsamples:
+            # if we reach this error, that means that we didn't properly
+            # overwrite the correct bits in the existing header file
+            raise IOError('Error in header bin file! I made some sort of mistake trying to overwrite the nsamples value in the header.')
 
     # number of blocks per file
-    nblocks_per_file = int(np.ceil((hdr['scanrate'] * SECONDS_PER_FILE) / hdr['samples_per_channel']))
+    nblocks_per_file = int(np.ceil(hdr['nsamples'] / hdr['blksize']))
     end_of_file = False
 
     # total number of bytes in one block taking all channels into account
-    block_size = hdr['samples_per_channel'] * hdr['nchan'] * BYTES_PER_SAMPLE
+    block_size = hdr['blksize'] * hdr['nchannels'] * BYTES_PER_SAMPLE
 
-    samples_per_channel = hdr['samples_per_channel']
+    samples_per_channel = hdr['blksize']
 
     # read blocks from FIFO and skip header
     with open(fifofile, 'rb') as fifo:
 
         # jump past the header of the FIFO file
-        fifo.seek(FIFO_HEADER_FIX_BYTES + hdr['nchan'] * FIFO_HEADER_BYTES_PER_CHANNEL)
+        fifo.seek(FIFO_HEADER_FIX_BYTES + hdr['nchannels'] * FIFO_HEADER_BYTES_PER_CHANNEL)
 
         # for each file
         fidx = 0
         while not end_of_file:
 
             # create a new output file
-            outputfile = outputfilebase + letters[fidx]
+            outputfile = outputfilebase + letters[fidx] + '.bin'
             print('Created file: ' + outputfile)
             fidx += 1
 
             # copy header to file_out
-            copyfile(header, outputfile)
+            copyfile(headerfile, outputfile)
 
             # open output file, header is already written, so use 'append' mode
             with open(outputfile, 'ab') as output:
 
+                # write data
                 for i in range(nblocks_per_file):
 
                     # load data for this block
@@ -66,15 +89,15 @@ def interleaved_to_chunk(header, fifofile, outputfilebase):
                         # last read from file, not enough sample to fill a
                         # blockSize, write as much data as possible such that all
                         # channels get the same amount of data
-                        samples_per_channel = len(data_one_block) // hdr['nchan'] // BYTES_PER_SAMPLE
-                        last_block_size = samples_per_channel * hdr['nchan'] * BYTES_PER_SAMPLE
+                        samples_per_channel = len(data_one_block) // hdr['nchannels'] // BYTES_PER_SAMPLE
+                        last_block_size = samples_per_channel * hdr['nchannels'] * BYTES_PER_SAMPLE
                         data_one_block = data_one_block[:last_block_size]
 
                         print('End of FIFO file!')
                         end_of_file = True
 
-                    # write data_one_block to output file but after reshaping it
-                    data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchan'], samples_per_channel, order='F')
+                    # reformat and reshape the data
+                    data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchannels'], samples_per_channel, order='F')
 
                     # write the data to the output file!
                     data_reshaped.tofile(output)
@@ -82,49 +105,6 @@ def interleaved_to_chunk(header, fifofile, outputfilebase):
                     # end?
                     if end_of_file:
                         break
-
-
-def readheader(filename):
-
-    # store header information in a dictionary
-    hdr = dict()
-
-    # read the binary file
-    with open(filename, 'rb') as f:
-
-        # parser helper function
-        parse = lambda d: np.fromfile(f, dtype=d, count=1)[0]
-
-        # the size of the header (32 bit unsigned integer)
-        hdr['size'] = parse('>I')
-        hdr['type'] = parse('>h')
-        hdr['version'] = parse('>h')
-
-        # number of scans (unused)
-        hdr['nscans'] = parse('>I')
-
-        # number of channels
-        hdr['nchan'] = parse('>I')
-
-        # whichChan is a list of recorded channels. It has as many items as
-        # recorded channels. Each channel is a 2 byte signed integer
-        hdr['whichChan'] = np.array([parse('>i2') for i in range(hdr['nchan'])])
-
-        # big endian, 32 bit floating point
-        hdr['scanrate'] = parse('>f')
-
-        # more header info
-        hdr['samples_per_channel'] = parse('>I')
-        hdr['scaleMult'] = parse('>f')
-        hdr['scaleOff'] = parse('>f')
-        hdr['dateSize'] = parse('>i')   # big endian, 32 bit signed integer
-        hdr['dateStr'] = parse('a'+str(hdr['dateSize']))
-        hdr['timeSize'] = parse('>i')
-        hdr['timeStr'] = parse('a'+str(hdr['timeSize']))    # string
-        hdr['userSize'] = parse('>i')
-        hdr['userStr'] = parse('a'+str(hdr['userSize']))
-
-    return hdr
 
 
 if __name__ == '__main__':
