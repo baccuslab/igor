@@ -20,7 +20,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     FIFO_HEADER_BYTES_PER_CHANNEL = 76
     BYTES_PER_SAMPLE = 2                # data is recorded as int16
     SECONDS_PER_FILE = 1000             # how big each file should be
-    fmt_string = 'int16'                # anything that is 2 bytes will work
+    fmt_string = '<H'                  # anything that is 2 bytes will work
     letters = list("abcdefghijklmnopqrstuvwxyz")
 
     # read existing Igor .bin header to extract some needed variables
