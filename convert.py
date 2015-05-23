@@ -20,7 +20,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     FIFO_HEADER_BYTES_PER_CHANNEL = 76
     BYTES_PER_SAMPLE = 2                # data is recorded as int16
     SECONDS_PER_FILE = 1000             # how big each file should be
-    fmt_string = '<H'                  # anything that is 2 bytes will work
+    fmt_string = '<h'                   # either '<h' (signed int 16) or '<H' (unsigned int 16)
     letters = list("abcdefghijklmnopqrstuvwxyz")
 
     # read existing Igor .bin header to extract some needed variables
@@ -84,9 +84,9 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
                         # last read from file, not enough sample to fill a
                         # blockSize, write as much data as possible such that all
                         # channels get the same amount of data
-                        #samples_per_channel = len(data_one_block) // hdr['nchannels'] // BYTES_PER_SAMPLE
-                        #last_block_size = samples_per_channel * hdr['nchannels'] * BYTES_PER_SAMPLE
-                        #data_one_block = data_one_block[:last_block_size]
+                        samples_per_channel = len(data_one_block) // hdr['nchannels'] // BYTES_PER_SAMPLE
+                        last_block_size = samples_per_channel * hdr['nchannels'] * BYTES_PER_SAMPLE
+                        data_one_block = data_one_block[:last_block_size]
 
                         print('End of FIFO file!')
                         end_of_file = True
@@ -97,8 +97,9 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
                         # reformat and reshape the data
                         data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchannels'], samples_per_channel, order='F')
 
-                        # write the data to the output file!
-                        data_reshaped.tofile(output)
+                        # write the data to the output file, swapping the byte
+                        # order (little -> big endian)
+                        data_reshaped.byteswap().tofile(output)
 
             # if the last file is shorter than the rest, write the appropriate
             # nsamples value in the header

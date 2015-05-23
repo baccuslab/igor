@@ -27,8 +27,8 @@ def readbin(filename, chanlist=None):
 
     """
 
-    # Type of binary data, 16-bit unsigned integers
-    uint = np.dtype('>i2')
+    # Type of binary data, 16-bit signed integers, BIG endian format
+    int16 = np.dtype('>i2')
 
     # Check file exists
     if not path.exists(filename):
@@ -46,9 +46,9 @@ def readbin(filename, chanlist=None):
             superblock_size = int(hdr['blksize'] * hdr['nchannels'])
             nsuperblocks = int(hdr['nsamples'] / hdr['blksize'])
             for block in range(nsuperblocks):
-                data[block * hdr['blksize'] : (block + 1) * hdr['blksize'], :] = \
-                        np.fromfile(fid, dtype=uint, count=superblock_size).reshape(
-                        (hdr['nchannels'], hdr['blksize'])).T
+                data[block * hdr['blksize']:(block + 1) * hdr['blksize'], :] = \
+                    np.fromfile(fid, dtype=int16, count=superblock_size) \
+                    .reshape((hdr['nchannels'], hdr['blksize'])).T
             data *= hdr['gain']
             data += hdr['offset']
             return data
@@ -64,8 +64,8 @@ def readbin(filename, chanlist=None):
                 raise IndexError('Channel {c:d} is not in the file'.format(c=chan))
 
         # Compute number of blocks and size of each data chunk
-        nblocks     = int(hdr['nsamples'] / hdr['blksize']) * uint.itemsize
-        chunk_size  = hdr['nchannels'] * hdr['blksize'] * uint.itemsize
+        nblocks = int(hdr['nsamples'] / hdr['blksize']) * int16.itemsize
+        chunk_size = hdr['nchannels'] * hdr['blksize'] * int16.itemsize
 
         # Preallocate return array
         data = np.empty((hdr['nsamples'], len(chanlist)))
@@ -74,7 +74,7 @@ def readbin(filename, chanlist=None):
         for chan in range(len(chanlist)):
 
             # Compute the offset into a block for this channel
-            chanoffset = chanlist[chan] * hdr['blksize'] * uint.itemsize
+            chanoffset = chanlist[chan] * hdr['blksize'] * int16.itemsize
 
             # Read the requested channel, a block at a time
             for block in range(nblocks):
@@ -83,7 +83,7 @@ def readbin(filename, chanlist=None):
                 fid.seek(hdr['hdrsize'] + block * chunk_size + chanoffset)
 
                 # Read the data
-                data[block * hdr['blksize']: (block + 1) * hdr['blksize'], chan] = np.fromfile(fid, dtype=uint,
+                data[block * hdr['blksize']: (block + 1) * hdr['blksize'], chan] = np.fromfile(fid, dtype=int16,
                                                                                                 count=hdr['blksize'])
 
         # Scale and offset
