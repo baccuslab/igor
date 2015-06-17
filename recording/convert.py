@@ -8,10 +8,11 @@ to chunked binary files (input for spike sorting system)
 """
 
 import sys
+import re
+import os
 import numpy as np
 from shutil import copyfile
 from binary import readbinhdr
-
 
 def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
 
@@ -32,7 +33,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     nsamples = hdr['fs'] * SECONDS_PER_FILE
 
     # overwrite
-    print('Warning: overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
+    print('Overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
     overwrite_nsamples(headerfile, nsamples)
 
     # reload header
@@ -132,7 +133,11 @@ def overwrite_nsamples(headerfile, value):
     with open(headerfile, 'r+b') as hfile:
         hfile.seek(8, 0)
         hfile.write(bytestr)
-
+		
+def output_files_exist(file):
+    regexp = re.compile(file + "[a-z].bin")
+    return any(list(map(lambda x: re.match(regexp, x), os.listdir())))
+		
 if __name__ == '__main__':
 
     if len(sys.argv) == 0 or len(sys.argv) > 3:
@@ -158,5 +163,10 @@ if __name__ == '__main__':
         header = sys.argv[1]
         fifo = sys.argv[2]
         output = sys.argv[1].rstrip('.bin')
+		
+    # Check that none of the output files exist
+    if output_files_exist(output):
+        raise ValueError("Would overwrite output files." +
+            "Remove them or specify a different output file name")
 
     interleaved_to_chunk(header, fifo, output)
