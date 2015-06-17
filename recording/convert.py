@@ -26,21 +26,20 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     # read existing Igor .bin header to extract some needed variables
     hdr = readbinhdr(headerfile)
 
-    # overwrite the header number of samples value if necessary
-    if hdr['nsamples'] == 0:
+    # overwrite the header number of samples value
+ 
+    # the correct nsamples value
+    nsamples = hdr['fs'] * SECONDS_PER_FILE
 
-        # the correct nsamples value
-        nsamples = hdr['fs'] * SECONDS_PER_FILE
+    # overwrite
+    print('Warning: overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
+    overwrite_nsamples(headerfile, nsamples)
 
-        # overwrite
-        print('Warning: overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
-        overwrite_nsamples(headerfile, nsamples)
-
-        # reload header
-        hdr = readbinhdr(headerfile)
-        if hdr['nsamples'] != nsamples:
-            # if we reach this error, that means that we didn't properly overwrite the correct bits in the existing header file
-            raise IOError('Error in header bin file! I made some sort of mistake trying to overwrite the nsamples value in the header.')
+    # reload header
+    hdr = readbinhdr(headerfile)
+    if hdr['nsamples'] != nsamples:
+        # if we reach this error, that means that we didn't properly overwrite the correct bits in the existing header file
+        raise IOError('Error in header bin file! I made some sort of mistake trying to overwrite the nsamples value in the header.')
 
     # number of blocks per file
     nblocks_per_file = int(np.ceil(hdr['nsamples'] / hdr['blksize']))
