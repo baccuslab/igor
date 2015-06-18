@@ -1146,10 +1146,16 @@ Function doStop(early)
 			s_path = replacestring(":", s_path, "\\\\")
 			s_path = replacestring("C\\\\", s_path, "C:\\\\")
 			
+			//TODO fix the path below
 			string cmd = "cmd.exe /K \"C:\\Pablo\\python\\convert.bat " + s_path + " " + saveName+ "\""
 			print cmd
 			ExecuteScriptText cmd
 		endif
+		
+		// (*) Kill MEA_Display and start it again. There is a bug in the way traces are display if we restart the recording
+		//	without killing the display. I don't understand why this happens but killing and restarting bypasses the problem
+		KillWindow "MEA_display"
+		execute("MEA_display()")
 	endif
 End
 
@@ -1580,7 +1586,7 @@ function populate_mea(columns, rows)
 	variable var_height = str2num(str_height)
 	variable var_width = str2num(str_width)
 	
-	NewPanel /W=(0,0, var_width, var_height)
+	NewPanel /W=(0,0, var_width, var_height)/k=1
 	button bstart , fcolor=(3,52428,1),pos={10,5},fsize=14,title="Start",proc=StartStopButton
 	SetVariable setvar0,size={140,5},pos={70,5},title="Time (s)"
 	SetVariable setvar0,fSize=14,value= $recDF+"totTime"
