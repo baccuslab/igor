@@ -1,0 +1,41 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1347\cocoasubrtf570
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural
+
+\f0\fs24 \cf0 This is how Igor\'92s FIFO header is organized.\
+	FSetPos refnum,0\
+\
+	String stmp="12341234",stmp2\
+	Variable/D v1,v2,v3,v4,v5,v6,hsize,nchans,deltaT				bytes\
+	FBinRead refnum,stmp		 						8\
+	FBinRead/F=3 refnum,v1								4\
+	FBinRead/F=3 refnum,v2		 						4\
+	FBinRead/F=3 refnum,hsize							4\
+	stmp="1234"\
+	FBinRead refnum,stmp								4\
+	FBinRead/F=2 refnum,v1		 						2\
+	FBinRead/F=2 refnum,v2		 						2\
+	FBinRead/F=3 refnum,v2								4\
+	stmp2=PadString("", 256, 0)\
+	FBinRead refnum,stmp2								256\
+	FBinRead/F=5 refnum,deltaT							8\
+	FBinRead/F=3 refnum,v4		 						4\
+	FBinRead/F=3 refnum,nchans							4\
+\
+	read information that is channel dependent, we have as many of these as channels\
+	FBinRead/F=2 refnum,veclen	 						2*nchans\
+	FBinRead/F=2 refnum,v1								2*nchans\
+	FBinRead/F=5 refnum,v2		 						8*nchans\
+	FBinRead/F=5 refnum,v3								8*nchans\
+	FBinRead/F=5 refnum,v4								8*nchans\
+	FBinRead/F=5 refnum,v5								8*nchans\
+	stmp=PadString("", 32, 0)\
+	FBinRead refnum,stmp								32*nchans\
+	stmp2=PadString("", 4, 0)\
+	FBinRead refnum,stmp2								4*nchans\
+	FBinRead/F=3 refnum,v6		 						4*nchans\
+\
+	 At this point data starts\
+}
