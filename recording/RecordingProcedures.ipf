@@ -1147,14 +1147,14 @@ Function doStop(early)
 			s_path = replacestring("C\\\\", s_path, "C:\\\\")
 			
 			//TODO fix the path below
-			string cmd = "cmd.exe /K \"C:\\Pablo\\python\\convert.bat " + s_path + " " + saveName+ "\""
+			string cmd = "cmd.exe /K \"C:\\Users\\Baccus^ Lab\\My^ Documents\\GitHub\\igor\\recording\\convert.bat " + s_path + " " + saveName+ "\""
 			print cmd
 			ExecuteScriptText cmd
 		endif
 		
 		// (*) Kill MEA_Display and start it again. There is a bug in the way traces are display if we restart the recording
 		//	without killing the display. I don't understand why this happens but killing and restarting bypasses the problem
-		KillWindow "MEA_display"
+		KillWindow MEA_display
 		execute("MEA_display()")
 	endif
 End
