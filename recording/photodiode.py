@@ -3,6 +3,7 @@ import numpy as np
 import re
 from os import listdir, path
 import subprocess
+from matplotlib import pyplot
 import pdb
 
 class PD(object):
@@ -43,6 +44,16 @@ class PD(object):
         self.header = binary.readbinhdr(self.binFiles[0])
         self.regex = regex
 
+    def process(self):
+        self.get_monitor_framerate()
+        self.get_stim_waitframes()
+        self.get_raw(self.binFiles[0], 0, 50)
+        self.get_start_time()
+
+    def get_raw(self, file, start_t, end_t):
+        raw = binary.readbin(file, [0]).flatten()
+        raw -= raw.min()
+        self.raw = raw[start_t*self.header['fs']:end_t*self.header['fs']]
 
     def get_monitor_framerate(self):
         '''
@@ -68,6 +79,7 @@ class PD(object):
         
         # get the freq with max FFT power
         self.monitor_framerate = pdFreqs[pdFFT.argmax()]
+        self.samples_per_frame = self.header['fs']/self.monitor_framerate
 
         '''
         # I only want the maximum location of pdFFT in between 'left' and 'right'
@@ -116,6 +128,92 @@ class PD(object):
         slope = np.diff(circCorr)
         self.stim_waitframes = (slope > slope[0]/2).argmax()
         
+    def down_sample(self, raw):
+        '''
+        Take a raw recording and sample it down by averaging the luminance over each
+        monitor flip
+
+        It is important to average from minimum to minimum without contaminating with 
+        either the previous or the next luminance value
+
+        I find the first minimum of the raw recording in between 1st sample and
+        self.header['fs'] /self.monitor_framerate
+        '''
+
+        pdb.set_trace()
+        # find position of 1st minimum
+        samples_per_frame = int(self.header['fs'] / self.monitor_framerate)
+        first_minimum_sample = raw[:samples_per_frame].argmin()
+
+        # TODO decide what to do with raw data up until the first_minimum_sample
+        #   for the time being, I'm going to keep the number of samples in raw fixed
+        #   and I'm just going to rotate the wave such that first_minimum_sample 
+        #   corresponds to either point 0 or point samples_per_frame-1 of raw
+        if first_minimum_sample > samples_per_frame/2:
+            # make sample corresponding to first_minimum_sample match point
+            # samples_per_frame of new raw
+            end_point = len(raw) - (samples_per_frame - first_minimum_sample)
+            new_raw = np.concatenate((raw[-end_point:], raw[end_point:]))
+        else:
+            # make sample corresponding to first_minimum_sample match point
+            # 0 of new raw
+            new_raw = np.concatenate((raw[first_minimum_sample:], raw[:first_minimum_sample:]))
+
+        # reshape raw
+        # I need total samples in raw to be an integer number of samples_per_frame
+        samples = samples_per_frame * len(raw) // samples_per_frame 
+        new_raw = new_raw[:samples]
+        new_raw = new_raw.reshape(-1, samples_per_frame)
+        return new_raw.mean(axis=1)
+
+    def get_peaks(self):
+        '''
+        given a photodiode 'raw' recording, find the maxima of each frame.
+
+        I'm assuming that minima in pd recording are spaced every self.samples_per_frame
+        even though this is not an integer number.
+
+        Once I have an estimated position for the minima I compute the maxima in between
+        consecutive pairs of minima.
+        '''
+
+        # locate first minimum
+        first_min = self.raw[:self.samples_per_frame].argmin()
+
+        #pdb.set_trace()
+        # assuming samples_per_frame, estimate position on following minimum
+        framesN = len(self.raw)//self.samples_per_frame - 1
+        minima = [int(first_min + i*self.samples_per_frame) for i in range(int(framesN))]
+
+        peaks = list(map(lambda x0,x1: self.raw[x0:x1].max(), minima[:-1], minima[1:]))
+        samples = list(map(lambda x0,x1: self.raw[x0:x1].argmax()+x0, minima[:-1], minima[1:]))
+        return peaks, samples
+
+    def get_start_time(self):
+        '''
+        if using the triggering system to start stimulus automatically with recording, 
+        the photodiode will be:
+            gray for some time
+            black for one frame
+            white for some time
+            black or dark gray for 3 frames
+            stimulus starts right after those 3 dark frames.
+
+        output:
+        ------
+            self.start_time:    peak time of first stimulus frame
+        '''
+        pdb.set_trace()
+        peaks, samples = self.get_peaks()
+        darker_values_samples = np.where(peaks < max(peaks)/2)[0]
+        
+        # find the sample corresponding to the peak of the last black frame just before
+        # stim starts
+        #last_dark_maxima_sample = samples[darker_values_samples[3]]
+
+        # define stimulus start as a fraction of samples_per_frame after this last_dark_maxima
+        self.stim_start_sample = samples[darker_values_samples[3]] + 0.5 * self.samples_per_frame
+        self.stim_start_t = self.stim_start_sample / self.header['fs']
 
     def read_stim_code(self, approx_start_t, delta_t):
         '''
