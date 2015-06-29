@@ -1,3 +1,13 @@
+'''
+this class holds together all necessary functionality to analyse a photodiode.
+
+A word of caution
+The monitor fliping rate is a finite number and therefore each flipping takes some time.
+Defining the stimulus start time requires an arbitrary decission, matching a concrete event
+with a single time within the monitor flipping time. I'm matching the start time to the peak
+of the PD recording
+
+'''
 from recording import binary
 import numpy as np
 import re
@@ -21,39 +31,39 @@ class PD(object):
         # make a list with all binFiles in current folder
         self.binFiles = [path.join(dirname, f) for f in listdir(dirname) if regex.match(f)]
 
-        """
-        # init the PD to be an empty numpy array
-        self.raw=np.array([])
-
-        # keep track of total experimental time
-        self.totalT = 0
-        
-        # loop through the files and exctract the photodiode for each one of them
-        for binFile in self.binFiles:
-            print('working on file', binFile)
-
-            # create the MEA object for current binFile
-            rec = meaRecording.MEA(binFile)
-            # extract pd from binBile
-            self.raw = np.concatenate((self.raw, rec.getChannel(0, rec.nscans/rec.scanRate)), axis=0) 
-            # update totalT
-            self.totalT += rec.nscans/rec.scanRate
-        """
-
         # extract some variables that are general and don't depend on the particular bin file
         self.header = binary.readbinhdr(self.binFiles[0])
         self.regex = regex
 
-    def process(self):
-        self.get_monitor_framerate()
-        self.get_stim_waitframes()
-        self.get_raw(self.binFiles[0], 0, 50)
-        self.get_start_time()
 
-    def get_raw(self, file, start_t, end_t):
-        raw = binary.readbin(file, [0]).flatten()
+    def get_raw(self, start_t, end_t):
+        '''
+        Return PD between start_t and end_t
+        
+        start_t/end_t are both in absolute time since the start of recording
+        as is wait4rec_start_t. wait4rec_start_t is probably in the order of 3-5
+        seconds and represents the time of the 1st white frame of the 1st stimulus
+        '''
+
+        """
+        # each bin file holds the same amount of data 'self.header['nsamples'] (may be except for the last one that
+        # is probably shorter). Figure out which ones need to be open to extract PD
+        start_file = start_t * self.header['fs'] // self.header['nsamples']
+        end_file = end_t * self.header['fs'] // self.header['nsamples'] + 1 # +1 because I want ts include file with this data in the for loop
+        
+        # start_t is most likely such that we have to start reading the PD somewhere in the middle
+        # middle of a binFile.
+        start_sample = np.mod(start_t * self.header['fs'], self.header['fs'])
+
+        """
+        map_object = map(lambda x: binary.readbin(x, [0]).flatten(), self.binFiles)
+        raw = np.concatenate(list(map_object))
+
         raw -= raw.min()
-        self.raw = raw[start_t*self.header['fs']:end_t*self.header['fs']]
+        
+        self.raw = raw
+        return raw[start_t*self.header['fs']:end_t*self.header['fs']]
+
 
     def get_monitor_framerate(self):
         '''
@@ -73,7 +83,7 @@ class PD(object):
         pd = binary.readbin(self.binFiles[0], [0]).flatten()
         pd = pd[:length * self.header['fs']]     # header['fs'] is the sampling rate (samples per second)
 
-        # FFT the signal
+       # FFT the signal
         pdFFT = scipy.fftpack.rfft(pd)
         pdFreqs = scipy.fftpack.rfftfreq(pd.size, 1./self.header['fs'])
         
@@ -81,28 +91,16 @@ class PD(object):
         self.monitor_framerate = pdFreqs[pdFFT.argmax()]
         self.samples_per_frame = self.header['fs']/self.monitor_framerate
 
-        '''
-        # I only want the maximum location of pdFFT in between 'left' and 'right'
-        subarray = pdFFT[left:right]
-
-        fftmaxarg = subarray.argmax()
-        freq = pdFreqs[left+fftmaxarg]
-
-        self.monitorRate=freq
-        self.frameperiod = 1/freq
-        self.scansPerFrame = self.frameperiod*self.scanRate
-        raise ValueError('debugging')
-        self.frameperiod = round(self.period/self.monitorNominalRate)
-        '''
 
     def get_stim_waitframes(self):
         '''
-        compute the number of monitor frames a given stimulus is shown for
-        from a PD recording.
+        From a PD recording, compute the number of monitor frames a given stimulus is
+        shown for, this is the minimum number of frames any image is on the monitor and is
+        a parameter of the stimulus
         
         Output:
         -------
-            self.:      average monitor flips per second
+            self.stim_waitframes:      average monitor flips per second
         
         '''
 
@@ -128,68 +126,52 @@ class PD(object):
         slope = np.diff(circCorr)
         self.stim_waitframes = (slope > slope[0]/2).argmax()
         
-    def down_sample(self, raw):
-        '''
-        Take a raw recording and sample it down by averaging the luminance over each
-        monitor flip
 
-        It is important to average from minimum to minimum without contaminating with 
-        either the previous or the next luminance value
-
-        I find the first minimum of the raw recording in between 1st sample and
-        self.header['fs'] /self.monitor_framerate
-        '''
-
-        pdb.set_trace()
-        # find position of 1st minimum
-        samples_per_frame = int(self.header['fs'] / self.monitor_framerate)
-        first_minimum_sample = raw[:samples_per_frame].argmin()
-
-        # TODO decide what to do with raw data up until the first_minimum_sample
-        #   for the time being, I'm going to keep the number of samples in raw fixed
-        #   and I'm just going to rotate the wave such that first_minimum_sample 
-        #   corresponds to either point 0 or point samples_per_frame-1 of raw
-        if first_minimum_sample > samples_per_frame/2:
-            # make sample corresponding to first_minimum_sample match point
-            # samples_per_frame of new raw
-            end_point = len(raw) - (samples_per_frame - first_minimum_sample)
-            new_raw = np.concatenate((raw[-end_point:], raw[end_point:]))
-        else:
-            # make sample corresponding to first_minimum_sample match point
-            # 0 of new raw
-            new_raw = np.concatenate((raw[first_minimum_sample:], raw[:first_minimum_sample:]))
-
-        # reshape raw
-        # I need total samples in raw to be an integer number of samples_per_frame
-        samples = samples_per_frame * len(raw) // samples_per_frame 
-        new_raw = new_raw[:samples]
-        new_raw = new_raw.reshape(-1, samples_per_frame)
-        return new_raw.mean(axis=1)
-
-    def get_peaks(self):
+    def get_peaks(self, raw, start_t, end_t=None):
         '''
         given a photodiode 'raw' recording, find the maxima of each frame.
 
-        I'm assuming that minima in pd recording are spaced every self.samples_per_frame
-        even though this is not an integer number.
+        There are two tricks in the implementation:
+        1.  I'm computing possition of minima knowing that one frame lasts on average
+            self.samples_per_frame. It doesn't matter if I don't get the position of the 
+            minima exactly right, I'm just using them to extract the maxima in between.
+        2.  I'm using map to compute the maxima in between consecutive minima.
+            Once I have an estimated position for the minima I compute the maxima in between
+            consecutive pairs of minima.
 
-        Once I have an estimated position for the minima I compute the maxima in between
-        consecutive pairs of minima.
+        inputs:
+        ------
+            raw:        raw pd recording
+
+            start_t:    time at which start looking for peaks. Hopefully close to a minima
+                        and not close to a peak.
+
+            end_t:      time at which to stop looking for peaks.
+                        if None defaults to end of raw recording
         '''
 
         # locate first minimum
-        first_min = self.raw[:self.samples_per_frame].argmin()
+        #start_sample = start_t * self.header['fs']
+        #first_min = raw[start_sample:start_sample + self.samples_per_frame].argmin() + start_sample
 
         #pdb.set_trace()
         # assuming samples_per_frame, estimate position on following minimum
-        framesN = len(self.raw)//self.samples_per_frame - 1
-        minima = [int(first_min + i*self.samples_per_frame) for i in range(int(framesN))]
+        if end_t is None:
+            end_t = len(raw)/self.header['fs']
 
-        peaks = list(map(lambda x0,x1: self.raw[x0:x1].max(), minima[:-1], minima[1:]))
-        samples = list(map(lambda x0,x1: self.raw[x0:x1].argmax()+x0, minima[:-1], minima[1:]))
+        framesN = int(np.round((end_t - start_t)*self.header['fs']/self.samples_per_frame))
+        minima = [int(start_t + i*self.samples_per_frame) for i in range(framesN+1)]
+
+        # This are the actual maxima
+        peaks = list(map(lambda x0,x1: raw[x0:x1].max(), minima[:-1], minima[1:]))
+        
+        # this is where the maxima take place
+        samples = list(map(lambda x0,x1: raw[x0:x1].argmax()+x0, minima[:-1], minima[1:]))
+        
         return peaks, samples
 
-    def get_start_time(self):
+
+    def get_wait4rec_start_t(self):
         '''
         if using the triggering system to start stimulus automatically with recording, 
         the photodiode will be:
@@ -203,44 +185,83 @@ class PD(object):
         ------
             self.start_time:    peak time of first stimulus frame
         '''
-        pdb.set_trace()
-        peaks, samples = self.get_peaks()
+        self.get_monitor_framerate()
+        self.get_stim_waitframes()
+        
+        raw = self.get_raw(0, 50)
+
+        peaks, samples = self.get_peaks(raw, 0)
         darker_values_samples = np.where(peaks < max(peaks)/2)[0]
         
-        # find the sample corresponding to the peak of the last black frame just before
-        # stim starts
-        #last_dark_maxima_sample = samples[darker_values_samples[3]]
+        # the 4th darker value of the PD corresponds to the last black frame just before
+        # stim starts. I'm defining  stimulus start time as roughly the timing of the next peak
+        self.wait4rec_start_sample = int(samples[darker_values_samples[3]] + self.samples_per_frame)
+        self.wait4rec_start_t = self.wait4rec_start_sample / self.header['fs']
 
-        # define stimulus start as a fraction of samples_per_frame after this last_dark_maxima
-        self.stim_start_sample = samples[darker_values_samples[3]] + 0.5 * self.samples_per_frame
-        self.stim_start_t = self.stim_start_sample / self.header['fs']
-
-    def read_stim_code(self, approx_start_t, delta_t):
+    def read_stim_code(self, raw, start_t, delta_t=None):
         '''
         When a stimulus starts, photodiode goes white on 1st frame (stays white
         for waitframes) and then the stim_code is present (20 binary frames, most
         significant bit first)
         
-        identify white frames in between (approx_start_t - delta_t, approx_start_t + delta_t)
-        
         read the following 20 digit binary code
 
         input:
         -----
-            approx_start_t:     in seconds, possition of expected white frames
+            raw:                pd recording
 
-            delta_t:            in seconds, how much time before and after approx_start_t
-                                to use in the computation
+            start_t:     in seconds, possition of expected white frames
+
+            delta_t:            in seconds, time before and after start_t
+                                to look for white frames preceding binary code.
+                                Default to None, in which caste start_t is assume
+                                to be precisse.
+
+        output:
+        ------
+            stim ID:            decoded stimulus number.
         '''
         
         pdb.set_trace()
-        raw_pd = binary.readbin(self.binFiles[0], [0]).flatten()
 
-        # limit recording to (approx_start_t - delta_t, approx_start_t + delta_t)
-        start_pnt = max((approx_start_t - delta_t) * self.header['fs'], 0)
-        end_pnt = (approx_start_t + delta_t) * self.header['fs']
+        # starting at start_t - delta_t and ending at start_t + delta_t
+        # find the position of the maxima
+        if delta_t is not None:
+            assert(start_t >0)
+            start_sample = (start_t - delta_t)*self.header['fs']
+            end_sample = (start_t + delta_t)*self.header['fs']
 
-        raw_pd[:15000]=-5
+            white_time = raw[start_sample:end_sample].argmax() / self.samples_per_frame
+        else:
+            white_time = start_t
+
+        # make sure we are at the end of the white frames, right before the stim code
+        # starts coming in.
+        peaks, samples = self.get_peaks(raw, white_time - 1/self.monitor_framerate)
+
+        white_threshold = 0.85
+        for i, peak in enumerate(peaks):
+            if peak < peaks[0]*white_threshold:
+                first_non_white_sample = samples[i]
+                print("First non white frame was found @ {0}".format(first_non_white_sample))
+                break
+
+
+        # read the next 20 * waitframes peak PD values
+        pdb.set_trace()
+        code_start_t = (first_non_white_sample - 0.5*self.samples_per_frame)/self.header['fs']
+        code_end_t = code_start_t + (self.stim_waitframes * 20 + 0.5) / self.monitor_framerate
+        #code_end_t = code_start_t + 1 / self.monitor_framerate
+        peaks, _ = self.get_peaks(raw, code_start_t, code_end_t)
+
+        # average 'waitframes' 
+        peaks = np.array(peaks)
+        peaks = peaks.reshape(-1, self.stim_waitframes).mean(axis=1)
+
+        print(peaks)
+        powers_of_2 = np.array([2*(19-i) for i in range(20)])
+
+        return (powers_of_2*peaks).sum()
         # find the peak of the recording
         peak_x = raw_pd[start_pnt:end_pnt].argmax()
         peak_y = raw_pd[peak_x]
