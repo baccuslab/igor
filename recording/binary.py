@@ -5,7 +5,7 @@ Tools for interacting with binary recording files
 
 import numpy as np
 from os import path
-
+import pdb
 
 def readbin(filename, chanlist=None):
     """
@@ -64,11 +64,11 @@ def readbin(filename, chanlist=None):
                 raise IndexError('Channel {c:d} is not in the file'.format(c=chan))
 
         # Compute number of blocks and size of each data chunk
-        nblocks = int(hdr['nsamples'] / hdr['blksize']) * int16.itemsize
+        nblocks = int(hdr['nsamples'] / hdr['blksize'] / int16.itemsize) 
         chunk_size = hdr['nchannels'] * hdr['blksize'] * int16.itemsize
 
         # Preallocate return array
-        data = np.empty((hdr['nsamples'], len(chanlist)))
+        data = np.empty((hdr['nsamples']/int16.itemsize, len(chanlist)))
 
         # Loop over requested channels
         for chan in range(len(chanlist)):
@@ -77,14 +77,24 @@ def readbin(filename, chanlist=None):
             chanoffset = chanlist[chan] * hdr['blksize'] * int16.itemsize
 
             # Read the requested channel, a block at a time
-            for block in range(nblocks):
-
+            # The channel does not necessarily have an integer number of blocks. Is better to loop until
+            # no more samples need to be loaded
+            bytes_needed = hdr['nsamples']
+            block = 0
+            while bytes_needed > 0:
                 # Offset file position to the current block and channel
                 fid.seek(hdr['hdrsize'] + block * chunk_size + chanoffset)
 
-                # Read the data
-                data[block * hdr['blksize']: (block + 1) * hdr['blksize'], chan] = np.fromfile(fid, dtype=int16,
-                                                                                                count=hdr['blksize'])
+                # samples to read in this fromfile execution
+                bytes_to_read = min(bytes_needed, hdr['blksize']*int16.itemsize)
+                samples_to_write = int(bytes_to_read/int16.itemsize)
+
+                # Read the data (count is the number of int16 to read, not the number of bytes)
+                data[block * hdr['blksize']: block * hdr['blksize'] + samples_to_write, chan] = np.fromfile(
+                        fid, dtype=int16, count=samples_to_write)
+
+                bytes_needed -= bytes_to_read
+                block += 1
 
         # Scale and offset
         data *= hdr['gain']
@@ -92,7 +102,6 @@ def readbin(filename, chanlist=None):
 
         # Return the data
         return data
-
 
 def readbinhdr(filename):
     """
@@ -147,3 +156,4 @@ def readbinhdr(filename):
 
         # Return the header
         return hdr
+
