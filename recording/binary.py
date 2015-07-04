@@ -7,7 +7,7 @@ import numpy as np
 from os import path
 import pdb
 
-def readbin(filename, chanlist=None):
+def readbin(filename, chanlist=None, length=None):
     """
     Read a binary recording file
 
@@ -19,6 +19,12 @@ def readbin(filename, chanlist=None):
     chanlist : array_like
         List of channels to read. Raises IndexError if any channels are not in the file. If None (default), loads all
         channels.
+
+    length   : float
+        Length in seconds of recoding to load
+        If requested length is less than what is available in file. Silentely falls back onto all available
+        data.
+        TODO    not yet implemented in 1st loop, when no channels are specified. 
 
     Output
     ------
@@ -79,7 +85,11 @@ def readbin(filename, chanlist=None):
             # Read the requested channel, a block at a time
             # The channel does not necessarily have an integer number of blocks. Is better to loop until
             # no more samples need to be loaded
-            bytes_needed = hdr['nsamples']
+            if length:
+                bytes_needed = min(length*hdr['fs']*int16.itemsize, hdr['nsamples'])
+            else:
+                bytes_needed = hdr['nsamples']
+
             block = 0
             while bytes_needed > 0:
                 # Offset file position to the current block and channel
@@ -148,6 +158,7 @@ def readbinhdr(filename):
         tmptime = np.fromfile(fid, dtype=uchar, count=hdr['timesz'])            # Time
         hdr['roomsz'] = np.fromfile(fid, dtype=uint, count=1)[0]		        # Size of room string
         tmproom = np.fromfile(fid, dtype=uchar, count=hdr['roomsz'])            # Room
+        hdr['bytes_per_sample'] = np.dtype('>i2').itemsize
 
         # Convert the date, time and room to strings
         hdr['date'] = ''.join([chr(i) for i in tmpdate])

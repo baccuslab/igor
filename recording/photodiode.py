@@ -27,7 +27,6 @@ class PD(object):
         'regex_string'
         '''
         
-        #pdb.set_trace()
         dirname = path.dirname(regex_string)
         basename= path.basename(regex_string)
         regex = re.compile(basename)
@@ -39,10 +38,13 @@ class PD(object):
         self.header = binary.readbinhdr(self.binFiles[0])
         self.regex = regex
 
+        #pdb.set_trace()
         self.__monitor_framerate__()
         self.__waitframes__()
         self.__wait4rec_start_t__()
-        self.stim_id = [self.read_stim_code(self.raw, self.start_t)]
+        self.stim_id = [self.read_stim_code(self.get_raw(0,10), self.start_t)]
+
+        print(self.stim_id, self.header['waitframes'], self.header['monitor_framerate'])
 
     def get_raw(self, start_t, end_t):
         '''
@@ -65,12 +67,11 @@ class PD(object):
 
         """
         #pdb.set_trace()
-        map_object = map(lambda x: binary.readbin(x, [0]).flatten(), self.binFiles)
+        map_object = map(lambda x: binary.readbin(x, [0], start_t + end_t).flatten(), self.binFiles)
         raw = np.concatenate(list(map_object))
 
         raw -= raw.min()
         
-        self.raw = raw
         return raw[start_t*self.header['fs']:end_t*self.header['fs']]
 
 
@@ -92,8 +93,8 @@ class PD(object):
 
         # load the photodiode, 100s is enough
         #pdb.set_trace()
-        length = min(100, self.header['nsamples']/self.header['bytes_per_sample']/self.header['fs'])    # in seconds
-        raw = binary.readbin(self.binFiles[0], [0]).flatten()
+        length = min(50, self.header['nsamples']/self.header['bytes_per_sample']/self.header['fs'])    # in seconds
+        raw = binary.readbin(self.binFiles[0], [0], length).flatten()
         raw = raw[:length * self.header['fs']]     # header['fs'] is the sampling rate (samples per second)
 
         # FFT the signal
@@ -120,14 +121,14 @@ class PD(object):
         
         '''
 
-        # 100 seconds should be good enough
-        length = 100        # in seconds
+        # 50 seconds should be good enough
+        length = 50        # in seconds
         samples = min(length * self.header['fs'], self.header['nsamples']/self.header['bytes_per_sample'])
 
         # For each monitor frame, compute the average luminance
         #pdb.set_trace()
-        raw = binary.readbin(self.binFiles[0], [0]).flatten()
-        values, _ = self.get_frame_values(np.mean, raw, 0, end_t=None)
+        raw = binary.readbin(self.binFiles[0], [0], length).flatten()
+        values, _ = self.get_frame_values(np.mean, raw, True, 0, end_t=None)
         values = np.array(values)
         values -= values.mean()
         
@@ -145,7 +146,7 @@ class PD(object):
         self.header['waitframes'] = (slope > slope[0]/2).argmax()
         
 
-    def get_frame_values(self, func, raw, start_t, end_t=None):
+    def get_frame_values(self, func, raw, start_from_first_min, start_t, end_t=None):
         '''
         given a photodiode 'raw' recording, find some statistic of each frame.
 
@@ -165,16 +166,22 @@ class PD(object):
 
             raw:        raw pd recording
 
+            start_from_first_min:       bool, if set, instead of starting from start_t, it will first
+                                        find the first minima and then proceed from there
+
             start_t:    time at which start looking for peaks. Hopefully close to a minima
                         and not close to a peak.
 
             end_t:      time at which to stop looking for peaks.
                         if None defaults to end of raw recording
+
         '''
 
-        # locate first minimum
-        #start_sample = start_t * self.header['fs']
-        #first_min = raw[start_sample:start_sample + self.header['samples_per_frame']].argmin() + start_sample
+        if start_from_first_min:
+            # locate first minimum
+            sample_0 = start_t * self.header['fs']
+            sample_1 = sample_0 + self.header['samples_per_frame']
+            start_t = raw[sample_0:sample_1].argmin()/self.header['fs']
 
         #pdb.set_trace()
         # assuming samples_per_frame, estimate position on following minimum
@@ -199,7 +206,7 @@ class PD(object):
         if using the triggering system to start stimulus automatically with recording, 
         the photodiode will be:
             gray for some time
-            black or 'waitframes' frames
+            black for some time (30 frames?) 
             stimulus starts right after with white 'waitframes' frames.
 
         output:
@@ -209,7 +216,9 @@ class PD(object):
         #pdb.set_trace()
         raw = self.get_raw(0, 5)
 
-        peaks, samples = self.get_frame_values(np.mean, raw, 0)
+        # start searching from peaks but start search from next minima
+        peaks, samples = self.get_frame_values(np.mean, raw, True, 1)
+
         # define as start time the peak time of the 1st white frame.
         # I'm defining as white anyting above 1.5* first peak intensity
         white_values_samples = np.where(peaks > peaks[0]*1.5)[0][0]
@@ -251,7 +260,7 @@ class PD(object):
         # frames
         read_start_t = start_t - 1/(self.header['monitor_framerate']*2)
         read_end_t = read_start_t + 21*self.header['waitframes']/self.header['monitor_framerate']
-        values, _ = self.get_frame_values(np.mean, raw, read_start_t, read_end_t)
+        values, _ = self.get_frame_values(np.mean, raw, False, read_start_t, read_end_t)
 
         # average over consecutive 'waitframes' frames
         values = np.array(values)
