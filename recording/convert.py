@@ -59,7 +59,7 @@ def interleaved_to_hdf5(headerfile, fifofile, outputfile):
     hdr = readbinhdr(headerfile)
 
     # get the size of the FIFO file
-    fifo_header_size = FIFO_HEADER_FIX_BYTES + hdr['nchananels'] * FIFO_HEADER_BYTES_PER_CHANNEL
+    fifo_header_size = FIFO_HEADER_FIX_BYTES + hdr['nchannels'] * FIFO_HEADER_BYTES_PER_CHANNEL
     fifo_size = os.path.getsize(fifofile) - fifo_header_size
 
     # get the total number of samples in this file
