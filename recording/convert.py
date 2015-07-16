@@ -14,6 +14,7 @@ import numpy as np
 from shutil import copyfile
 from binary import readbinhdr
 
+
 def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
 
     # some constants
@@ -28,7 +29,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     hdr = readbinhdr(headerfile)
 
     # overwrite the header number of samples value
- 
+
     # the correct nsamples value
     nsamples = hdr['fs'] * SECONDS_PER_FILE
 
@@ -91,7 +92,6 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
                         print('End of FIFO file!')
                         end_of_file = True
                         break
-                        #final_file_truncated = True
 
                     else:
                         # reformat and reshape the data
@@ -133,11 +133,13 @@ def overwrite_nsamples(headerfile, value):
     with open(headerfile, 'r+b') as hfile:
         hfile.seek(8, 0)
         hfile.write(bytestr)
-		
+
+
 def output_files_exist(file):
     regexp = re.compile(file + "[a-z].bin")
     return any(list(map(lambda x: re.match(regexp, x), os.listdir())))
-		
+
+
 if __name__ == '__main__':
 
     if len(sys.argv) == 0 or len(sys.argv) > 3:
@@ -163,7 +165,7 @@ if __name__ == '__main__':
         header = sys.argv[1]
         fifo = sys.argv[2]
         output = sys.argv[1].rstrip('.bin')
-		
+
     # Check that none of the output files exist
     if output_files_exist(output):
         raise ValueError("Would overwrite output files." +
