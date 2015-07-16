@@ -41,12 +41,6 @@ def interleaved_to_hdf5(headerfile, fifofile, outputfile):
 
     """
 
-    # some constants
-    FIFO_HEADER_FIX_BYTES = 304
-    FIFO_HEADER_BYTES_PER_CHANNEL = 76
-    BYTES_PER_SAMPLE = 2                # data is recorded as int16
-    fmt_string = '<h'                   # either '<h' (signed int 16) or '<H' (unsigned int 16)
-
     # Append .hdf5 to the output file
     if not outputfile.endswith('.hdf5'):
         outputfile += '.hdf5'
@@ -56,14 +50,13 @@ def interleaved_to_hdf5(headerfile, fifofile, outputfile):
         raise ValueError("Output file {} already exists!".format(outputfile))
 
     # read existing Igor .bin header to extract some needed variables
-    hdr = readbinhdr(headerfile)
+    hdr = preprocess_fifo(headerfile, fifofile)
 
     # get the size of the FIFO file
-    fifo_header_size = FIFO_HEADER_FIX_BYTES + hdr['nchannels'] * FIFO_HEADER_BYTES_PER_CHANNEL
-    fifo_size = os.path.getsize(fifofile) - fifo_header_size
+    fifo_size = os.path.getsize(fifofile) - hdr['fifo_hdrsize']
 
     # get the total number of samples in this file
-    nsamples = fifo_size // BYTES_PER_SAMPLE // hdr['nchannels']
+    nsamples = fifo_size // hdr['bytes_per_sample'] // hdr['nchannels']
 
     # create the (writeable) hdf5 file
     outfile = h5py.File(outputfile, "w")
@@ -73,10 +66,10 @@ def interleaved_to_hdf5(headerfile, fifofile, outputfile):
     with open(fifofile, 'rb') as fifo:
 
         # jump past the header of the FIFO file
-        fifo.seek(FIFO_HEADER_FIX_BYTES + hdr['nchannels'] * FIFO_HEADER_BYTES_PER_CHANNEL)
+        fifo.seek(hdr['fifo_hdrsize'])
 
         # read the data
-        data = np.fromstring(fifo.read(), dtype=fmt_string)
+        data = np.fromstring(fifo.read(), dtype=hdr['fmt_string'])
 
         # write to the file
         dataset[...] = data.reshape(hdr['nchannels'], nsamples, order='F')
@@ -87,12 +80,18 @@ def interleaved_to_hdf5(headerfile, fifofile, outputfile):
     dataset.attrs['gain'] = hdr['gain']
     dataset.attrs['offset'] = hdr['offset']
 
+    # get input from the user
+    if sys.version_info >= (3, 0):
+        get_input = lambda desc: input(desc)
+    else:
+        get_input = lambda desc: raw_input(desc)
+
     # get the array type
-    arr = input('Which array did you use? [hexagonal, lowdens, highdens, hidens]: ')
+    arr = get_input('Which array did you use? [hexagonal, lowdens, highdens, hidens]: ')
     dataset.attrs['array'] = arr
 
-    rm = input('Which room did you perform the experiments in? [d239, d???]')
-    dataset.attrs['room'] = rm
+    room = get_input('Which room did you perform the experiments in? [d239, d???]: ')
+    dataset.attrs['room'] = room
 
     dataset.attrs['bin-file-version'] = 0
     dataset.attrs['bin-file-type'] = 0
@@ -126,38 +125,30 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
 
     """
 
-    # some constants
-    FIFO_HEADER_FIX_BYTES = 304
-    FIFO_HEADER_BYTES_PER_CHANNEL = 76
-    BYTES_PER_SAMPLE = 2                # data is recorded as int16
     SECONDS_PER_FILE = 1000             # how big each file should be
-    fmt_string = '<h'                   # either '<h' (signed int 16) or '<H' (unsigned int 16)
     letters = list("abcdefghijklmnopqrstuvwxyz")
 
-    # read existing Igor .bin header to extract some needed variables
-    hdr = readbinhdr(headerfile)
-
     # overwrite the header number of samples value
-
-    # the correct nsamples value
+    hdr = readbinhdr(headerfile)
     nsamples = hdr['fs'] * SECONDS_PER_FILE
-
-    # overwrite
-    print('Overwriting the header nsamples value of 0 with %i (%i seconds per file)' % (nsamples, SECONDS_PER_FILE))
+    print('Overwriting the header nsamples with {} ({} seconds per file)'
+          .format(nsamples, SECONDS_PER_FILE))
     overwrite_nsamples(headerfile, nsamples)
 
     # reload header
-    hdr = readbinhdr(headerfile)
+    hdr = preprocess_fifo(headerfile, fifofile)
     if hdr['nsamples'] != nsamples:
-        # if we reach this error, that means that we didn't properly overwrite the correct bits in the existing header file
-        raise IOError('Error in header bin file! I made some sort of mistake trying to overwrite the nsamples value in the header.')
+        # if we reach this error, that means that we didn't properly overwrite
+        # the correct bits in the existing header file
+        raise IOError('Error in header bin file! I made some sort of mistake'
+                      'trying to overwrite the nsamples value in the header.')
 
     # number of blocks per file
     nblocks_per_file = int(np.ceil(hdr['nsamples'] / hdr['blksize']))
     end_of_file = False
 
     # total number of bytes in one block taking all channels into account
-    block_size = hdr['blksize'] * hdr['nchannels'] * BYTES_PER_SAMPLE
+    block_size = hdr['blksize'] * hdr['nchannels'] * hdr['bytes_per_sample']
 
     samples_per_channel = hdr['blksize']
 
@@ -165,7 +156,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     with open(fifofile, 'rb') as fifo:
 
         # jump past the header of the FIFO file
-        fifo.seek(FIFO_HEADER_FIX_BYTES + hdr['nchannels'] * FIFO_HEADER_BYTES_PER_CHANNEL)
+        fifo.seek(hdr['fifo_hdrsize'])
 
         # for each file
         fidx = 0
@@ -194,8 +185,8 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
                         # last read from file, not enough sample to fill a
                         # blockSize, write as much data as possible such that all
                         # channels get the same amount of data
-                        samples_per_channel = len(data_one_block) // hdr['nchannels'] // BYTES_PER_SAMPLE
-                        last_block_size = samples_per_channel * hdr['nchannels'] * BYTES_PER_SAMPLE
+                        samples_per_channel = len(data_one_block) // hdr['nchannels'] // hdr['bytes_per_sample']
+                        last_block_size = samples_per_channel * hdr['nchannels'] * hdr['bytes_per_sample']
                         data_one_block = data_one_block[:last_block_size]
 
                         print('End of FIFO file!')
@@ -218,6 +209,28 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
                 overwrite_nsamples(outputfile, samples_per_channel * hdr['nchannels'])
 
     print('Done!')
+
+
+def preprocess_fifo(headerfile, fifofile):
+    """
+    Preprocess a FIFO file, extracting some information
+    """
+
+    # some constants
+    FIFO_HEADER_FIX_BYTES = 304
+    FIFO_HEADER_BYTES_PER_CHANNEL = 76
+
+    # read existing Igor .bin header to extract some needed variables
+    hdr = readbinhdr(headerfile)
+
+    # FIFO header size
+    hdr['fifo_hdrsize'] = FIFO_HEADER_FIX_BYTES + hdr['nchannels'] * FIFO_HEADER_BYTES_PER_CHANNEL
+
+    # format string
+    hdr['fmt_string'] = '<h'            # signed int 16
+    hdr['bytes_per_sample'] = 2         # data is recorded as int16
+
+    return hdr
 
 
 def overwrite_nsamples(headerfile, value):
