@@ -50,7 +50,7 @@ def interleaved_to_hdf5(headerfile, fifofile, outputfile):
         raise ValueError("Output file {} already exists!".format(outputfile))
 
     # read existing Igor .bin header to extract some needed variables
-    hdr = preprocess_fifo(headerfile, fifofile)
+    hdr = load_header(headerfile)
 
     # get the size of the FIFO file
     fifo_size = os.path.getsize(fifofile) - hdr['fifo_hdrsize']
@@ -136,7 +136,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     overwrite_nsamples(headerfile, nsamples)
 
     # reload header
-    hdr = preprocess_fifo(headerfile, fifofile)
+    hdr = load_header(headerfile)
     if hdr['nsamples'] != nsamples:
         # if we reach this error, that means that we didn't properly overwrite
         # the correct bits in the existing header file
@@ -211,7 +211,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
     print('Done!')
 
 
-def preprocess_fifo(headerfile, fifofile):
+def load_header(headerfile):
     """
     Preprocess a FIFO file, extracting some information
     """
