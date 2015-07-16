@@ -11,11 +11,97 @@ import sys
 import re
 import os
 import numpy as np
+import h5py
 from shutil import copyfile
 from binary import readbinhdr
 
 
+def interleaved_to_hdf5(headerfile, fifofile, outputfile):
+    """
+    This function converts a FIFO interleaved file (from the MCS system)
+    to the new hdf5 data format.
+
+    See the wiki [1] for information about the hdf5 file format.
+
+    Parameters
+    ----------
+    headerfile : string
+        filepath to a file containing the appropriate binary header for the
+        chunked binary file format. This header is then copied to each of the
+        output files.
+
+    fifofile : string
+        filepath for the FIFO (data) file
+
+    outputfile: string
+        filename for the output file
+
+    [1] https://github.com/baccuslab/spike-sorting/wiki/data-file-format
+
+    """
+
+    # some constants
+    FIFO_HEADER_FIX_BYTES = 304
+    FIFO_HEADER_BYTES_PER_CHANNEL = 76
+    BYTES_PER_SAMPLE = 2                # data is recorded as int16
+    fmt_string = '<h'                   # either '<h' (signed int 16) or '<H' (unsigned int 16)
+
+    # Append .hdf5 to the output file
+    if not outputfile.endswith('.hdf5'):
+        outputfile += '.hdf5'
+
+    # make sure the output file does not exist
+    if outputfile in os.listdir('.'):
+        raise ValueError("Output file {} already exists!".format(outputfile))
+
+    # read existing Igor .bin header to extract some needed variables
+    hdr = readbinhdr(headerfile)
+
+    # get the size of the FIFO file
+    fifo_header_size = FIFO_HEADER_FIX_BYTES + hdr['nchananels'] * FIFO_HEADER_BYTES_PER_CHANNEL
+    fifo_size = os.path.getsize(fifofile) - fifo_header_size
+
+    # checks passed, create the (writeable) hdf5 file
+    outfile = h5py.File(outputfile, "w")
+
+    # number of blocks per file
+    nblocks_per_file = int(np.ceil(hdr['nsamples'] / hdr['blksize']))
+    end_of_file = False
+
+    # total number of bytes in one block taking all channels into account
+    block_size = hdr['blksize'] * hdr['nchannels'] * BYTES_PER_SAMPLE
+
+    samples_per_channel = hdr['blksize']
+
+    # read blocks from FIFO and skip header
+    with open(fifofile, 'rb') as fifo:
+
+        # jump past the header of the FIFO file
+        fifo.seek(FIFO_HEADER_FIX_BYTES + hdr['nchannels'] * FIFO_HEADER_BYTES_PER_CHANNEL)
+
+
 def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
+    """
+    This function converts a FIFO interleaved file (from the MCS system)
+    to the chunked binary format that the original spike sorting software used
+
+    Parameters
+    ----------
+    headerfile : string
+        filepath to a file containing the appropriate binary header for the
+        chunked binary file format. This header is then copied to each of the
+        output files.
+
+    fifofile : string
+        filepath for the FIFO (data) file
+
+    outputfilebase : string
+        A string that will form the stub of the output filenames. A single
+        letter is automatically appended to the stub to denote the order
+        of the different split files. For example, a stub of '012345' would
+        result in output files named '012345a.bin', 012345b.bin', and so on.
+
+    """
 
     # some constants
     FIFO_HEADER_FIX_BYTES = 304
@@ -135,8 +221,21 @@ def overwrite_nsamples(headerfile, value):
         hfile.write(bytestr)
 
 
-def output_files_exist(file):
-    regexp = re.compile(file + "[a-z].bin")
+def output_files_exist(outputfilebase):
+    """
+    A boolean function that checks if any output files exist with the given
+    base file name
+
+    Parameters
+    ----------
+
+    outputfilebase : string
+        A string that will form the stub of the output filenames. The function
+        are the stub plus a letter tacked on, for example, a stub of '012345'
+        would check for files named '012345a.bin', 012345b.bin', and so on.
+
+    """
+    regexp = re.compile(outputfilebase + "[a-z].bin")
     return any(list(map(lambda x: re.match(regexp, x), os.listdir())))
 
 
