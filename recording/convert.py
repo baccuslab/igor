@@ -10,6 +10,7 @@ to chunked binary files (input for spike sorting system)
 import sys
 import re
 import os
+import time
 import numpy as np
 import h5py
 from shutil import copyfile
@@ -61,23 +62,45 @@ def interleaved_to_hdf5(headerfile, fifofile, outputfile):
     fifo_header_size = FIFO_HEADER_FIX_BYTES + hdr['nchananels'] * FIFO_HEADER_BYTES_PER_CHANNEL
     fifo_size = os.path.getsize(fifofile) - fifo_header_size
 
-    # checks passed, create the (writeable) hdf5 file
+    # get the total number of samples in this file
+    nsamples = fifo_size // BYTES_PER_SAMPLE // hdr['nchannels']
+
+    # create the (writeable) hdf5 file
     outfile = h5py.File(outputfile, "w")
-
-    # number of blocks per file
-    nblocks_per_file = int(np.ceil(hdr['nsamples'] / hdr['blksize']))
-    end_of_file = False
-
-    # total number of bytes in one block taking all channels into account
-    block_size = hdr['blksize'] * hdr['nchannels'] * BYTES_PER_SAMPLE
-
-    samples_per_channel = hdr['blksize']
+    dataset = outfile.create_dataset("data", (hdr['nchannels'], nsamples), dtype='h')
 
     # read blocks from FIFO and skip header
     with open(fifofile, 'rb') as fifo:
 
         # jump past the header of the FIFO file
         fifo.seek(FIFO_HEADER_FIX_BYTES + hdr['nchannels'] * FIFO_HEADER_BYTES_PER_CHANNEL)
+
+        # read the data
+        data = np.fromstring(fifo.read(), dtype=fmt_string)
+
+        # write to the file
+        dataset[...] = data.reshape(hdr['nchannels'], nsamples, order='F')
+
+    # add attributes to the hdf5 file
+    dataset.attrs['date'] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+    dataset.attrs['sample-rate'] = hdr['fs']
+    dataset.attrs['gain'] = hdr['gain']
+    dataset.attrs['offset'] = hdr['offset']
+
+    # get the array type
+    arr = input('Which array did you use? [hexagonal, lowdens, highdens, hidens]: ')
+    dataset.attrs['array'] = arr
+
+    rm = input('Which room did you perform the experiments in? [d239, d???]')
+    dataset.attrs['room'] = rm
+
+    dataset.attrs['bin-file-version'] = 0
+    dataset.attrs['bin-file-type'] = 0
+
+    # flush and close
+    outfile.flush()
+    outfile.close()
+    print('Done!')
 
 
 def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
