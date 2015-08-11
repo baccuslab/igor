@@ -195,7 +195,7 @@ def interleaved_to_chunk(headerfile, fifofile, outputfilebase):
 
                     else:
                         # reformat and reshape the data
-                        data_reshaped = np.fromstring(data_one_block, dtype=fmt_string).reshape(hdr['nchannels'], samples_per_channel, order='F')
+                        data_reshaped = np.fromstring(data_one_block, dtype=hdr['fmt_string']).reshape(hdr['nchannels'], samples_per_channel, order='F')
 
                         # write the data to the output file, swapping the byte
                         # order (little -> big endian)
