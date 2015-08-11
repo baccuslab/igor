@@ -5,7 +5,6 @@ Tools for interacting with binary recording files
 
 import numpy as np
 from os import path
-import pdb
 
 def readbin(filename, chanlist=None, length=None):
     """
@@ -24,7 +23,7 @@ def readbin(filename, chanlist=None, length=None):
         Length in seconds of recoding to load
         If requested length is less than what is available in file. Silentely falls back onto all available
         data.
-        TODO    not yet implemented in 1st loop, when no channels are specified. 
+        TODO    not yet implemented in 1st loop, when no channels are specified.
 
     Output
     ------
@@ -38,10 +37,14 @@ def readbin(filename, chanlist=None, length=None):
 
     # Check file exists
     if not path.exists(filename):
-        raise IOError('Requested bin file {f} does not exist'.format(f=filename))
+        raise IOError('Requested bin file {} does not exist'.format(filename))
 
     # Read the header
     hdr = readbinhdr(filename)
+
+    # each superblock is a block of channesls
+    superblock_size = int(hdr['blksize'] * hdr['nchannels'])
+    nsuperblocks = int(hdr['nsamples'] / hdr['blksize'])
 
     # Check the channel list given
     if chanlist is None or len(chanlist) == 0:
@@ -49,8 +52,6 @@ def readbin(filename, chanlist=None, length=None):
         with open(filename, 'rb') as fid:
             fid.seek(hdr['hdrsize'])
             data = np.empty((hdr['nsamples'], hdr['nchannels']))
-            superblock_size = int(hdr['blksize'] * hdr['nchannels'])
-            nsuperblocks = int(hdr['nsamples'] / hdr['blksize'])
             for block in range(nsuperblocks):
                 data[block * hdr['blksize']:(block + 1) * hdr['blksize'], :] = \
                     np.fromfile(fid, dtype=int16, count=superblock_size) \
@@ -69,18 +70,17 @@ def readbin(filename, chanlist=None, length=None):
             if chan not in hdr['channels']:
                 raise IndexError('Channel {c:d} is not in the file'.format(c=chan))
 
-        # Compute number of blocks and size of each data chunk
-        nblocks = int(hdr['nsamples'] / hdr['blksize'] / int16.itemsize) 
+        # Compute size of each data chunk
         chunk_size = hdr['nchannels'] * hdr['blksize'] * int16.itemsize
 
         # Preallocate return array
         data = np.empty((hdr['nsamples'], len(chanlist)))
 
         # Loop over requested channels
-        for chan in range(len(chanlist)):
+        for chan_idx, chan in enumerate(chanlist):
 
             # Compute the offset into a block for this channel
-            chanoffset = chanlist[chan] * hdr['blksize'] * int16.itemsize
+            chanoffset = chan * hdr['blksize'] * int16.itemsize
 
             # Read the requested channel, a block at a time
             # The channel does not necessarily have an integer number of blocks. Is better to loop until
@@ -100,7 +100,8 @@ def readbin(filename, chanlist=None, length=None):
                 samples_to_write = int(bytes_to_read / int16.itemsize)
 
                 # Read the data (count is the number of int16 to read, not the number of bytes)
-                data[block * hdr['blksize']: block * hdr['blksize'] + samples_to_write, chan] = np.fromfile(
+                data[block * hdr['blksize']: block * hdr['blksize'] +
+                     samples_to_write, chan_idx] = np.fromfile(
                         fid, dtype=int16, count=samples_to_write)
 
                 bytes_needed -= bytes_to_read
@@ -112,6 +113,7 @@ def readbin(filename, chanlist=None, length=None):
 
         # Return the data
         return data
+
 
 def readbinhdr(filename):
     """
@@ -167,4 +169,3 @@ def readbinhdr(filename):
 
         # Return the header
         return hdr
-
