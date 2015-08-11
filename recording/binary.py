@@ -74,7 +74,7 @@ def readbin(filename, chanlist=None, length=None):
         chunk_size = hdr['nchannels'] * hdr['blksize'] * int16.itemsize
 
         # Preallocate return array
-        data = np.empty((hdr['nsamples']/int16.itemsize, len(chanlist)))
+        data = np.empty((hdr['nsamples'], len(chanlist)))
 
         # Loop over requested channels
         for chan in range(len(chanlist)):
@@ -86,9 +86,9 @@ def readbin(filename, chanlist=None, length=None):
             # The channel does not necessarily have an integer number of blocks. Is better to loop until
             # no more samples need to be loaded
             if length:
-                bytes_needed = min(length*hdr['fs']*int16.itemsize, hdr['nsamples'])
+                bytes_needed = min(length * hdr['fs'] * int16.itemsize, hdr['nsamples'])
             else:
-                bytes_needed = hdr['nsamples']
+                bytes_needed = hdr['nsamples'] * int16.itemsize
 
             block = 0
             while bytes_needed > 0:
@@ -96,8 +96,8 @@ def readbin(filename, chanlist=None, length=None):
                 fid.seek(hdr['hdrsize'] + block * chunk_size + chanoffset)
 
                 # samples to read in this fromfile execution
-                bytes_to_read = min(bytes_needed, hdr['blksize']*int16.itemsize)
-                samples_to_write = int(bytes_to_read/int16.itemsize)
+                bytes_to_read = min(bytes_needed, hdr['blksize'] * int16.itemsize)
+                samples_to_write = int(bytes_to_read / int16.itemsize)
 
                 # Read the data (count is the number of int16 to read, not the number of bytes)
                 data[block * hdr['blksize']: block * hdr['blksize'] + samples_to_write, chan] = np.fromfile(
